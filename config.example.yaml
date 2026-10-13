@@ -1,0 +1,30 @@
+version: "1.0"
+
+tunnels:
+  - id: wg1
+    type: wireguard
+    config: ./wg/wg1.conf
+    subnet: 10.200.1.0/24
+    dns: 10.2.0.1
+    jail:
+      lib_path: /var/lib/void/lib
+
+  - id: tor1
+    type: tor
+    subnet: 10.200.2.0/24
+    socks_port: 9050
+    services:
+      - name: hidden-dashboard
+        type: onion
+        target_port: 8080
+        virtual_port: 80
+        key_dir: ./keys/tor1
+    jail:
+      lib_path: /var/lib/void/lib
+
+listeners:
+  - bind: "127.0.0.1:1080"
+    strategy: round-robin
+    pool:
+      - wg1
+      - tor1

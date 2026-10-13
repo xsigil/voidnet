@@ -1,0 +1,11 @@
+_build/
+*.install
+jail_libs/
+wg_configs/
+ovpn_configs/
+*.conf
+*.ovpn
+auth*.txt
+pass*.txt
+multi_config.yaml
+config.yaml

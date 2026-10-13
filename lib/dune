@@ -1,0 +1,9 @@
+(library
+ (name voidnet)
+ (libraries
+  unix
+  eio
+  eio_main
+  yaml
+  ppx_deriving_yaml.runtime)
+ (preprocess (pps ppx_deriving_yaml)))

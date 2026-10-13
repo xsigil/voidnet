@@ -1,0 +1,23 @@
+tunnels:
+  - id: wg-01
+    type: wireguard
+    subnet: 10.200.4.0/24
+    config: ./examples/wg-sample.conf
+
+  - id: ovpn-01
+    type: openvpn
+    subnet: 10.200.5.0/24
+    config: ./examples/ovpn-sample.ovpn
+    auth_file: ./examples/auth.txt
+
+  - id: tor-01
+    type: tor
+    subnet: 10.200.2.0/24
+    socks_port: 9050
+
+listeners:
+  - bind: 127.0.0.1:1080
+    pool:
+      - wg-01
+      - ovpn-01
+      - tor-01
