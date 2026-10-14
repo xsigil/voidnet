@@ -58,13 +58,20 @@ let extract_target_ip (subnet : string) =
   | [a; b; c; _] -> Printf.sprintf "%s.%s.%s.2" a b c
   | _ -> failwith ("Invalid subnet format: " ^ subnet)
 
-let kill_all_subprocesses tunnels =
+(* プロセスとインターフェースの即時強制クリーンアップ（シグナル時および終了時に同期実行） *)
+let force_cleanup_all tunnels =
   List.iter (fun (t : Voidnet.Config.tunnel_spec) ->
     let netns = "ns-" ^ t.id in
+    let veth_host = Printf.sprintf "veth-%s-br" t.id in
+    (* 1. サブプロセスを強制終了 *)
     ignore (Sys.command (Printf.sprintf "pkill -9 -f '%s' 2>/dev/null || true" netns));
-    ignore (Sys.command (Printf.sprintf "pkill -9 -f 'voidnet-tor-%s' 2>/dev/null || true" netns))
+    ignore (Sys.command (Printf.sprintf "pkill -9 -f 'voidnet-tor-%s' 2>/dev/null || true" netns));
+    (* 2. インターフェースと netns を同期削除 *)
+    Voidnet.Netns.teardown ~netns ~veth_host
   ) tunnels;
-  ignore (Sys.command "pkill -9 -f 'socat.*TCP:' 2>/dev/null || true")
+  ignore (Sys.command "pkill -9 -f 'socat.*TCP:' 2>/dev/null || true");
+  (* 3. ホスト側に残存する veth-*-br をワイルドカードで根こそぎ削除 *)
+  ignore (Sys.command "ip -o link show | awk -F': ' '$2 ~ /^veth-.*-br/ {print $2}' | cut -d'@' -f1 | xargs -r -n 1 ip link delete 2>/dev/null || true")
 
 let run_engine config_path =
   Eio_main.run @@ fun env ->
@@ -76,19 +83,22 @@ let run_engine config_path =
     (List.length cfg.Voidnet.Config.tunnels)
     (List.length cfg.Voidnet.Config.listeners);
 
-  (* 1. 各名前空間・veth の初期化 *)
-  List.iter Voidnet.Netns.setup cfg.Voidnet.Config.tunnels;
+  (* 異常終了・通常終了時にも確実に実行されるフックを登録 *)
+  at_exit (fun () ->
+    force_cleanup_all cfg.Voidnet.Config.tunnels
+  );
 
   let stop_promise, stop_resolver = Promise.create () in
   let shutting_down = ref false in
   let handle_signal _ =
     if not !shutting_down then begin
       shutting_down := true;
-      traceln "\n[Engine] Signal received. Commencing immediate graceful teardown...";
-      kill_all_subprocesses cfg.Voidnet.Config.tunnels;
-      Promise.resolve stop_resolver ()
+      traceln "\n[Engine] Signal received. Commencing immediate cleanup of all interfaces and namespaces...";
+      (* Eio の非同期解除を待たずに、シグナルハンドラから即座に同期削除 *)
+      force_cleanup_all cfg.Voidnet.Config.tunnels;
+      Promise.resolve stop_resolver ();
+      exit 0
     end else begin
-      traceln "\n[Engine] Second signal received. Force terminating...";
       exit 130
     end
   in
@@ -98,6 +108,11 @@ let run_engine config_path =
   try
     Switch.run @@ fun sw ->
     let default_lib_dir = "./jail_libs" in
+
+    (* 1. 各名前空間・veth の初期化 *)
+    List.iter (fun tunnel ->
+      Voidnet.Netns.setup ~sw tunnel
+    ) cfg.Voidnet.Config.tunnels;
 
     (* 2. 各トンネルプロセスの起動 *)
     List.iter (fun (tunnel : Voidnet.Config.tunnel_spec) ->
@@ -109,7 +124,6 @@ let run_engine config_path =
       in
       match tunnel.tunnel_type with
       | "wireguard" ->
-        (* WireGuard は Netns.setup 内でインターフェース・ルート設定完了済み *)
         ()
       | "tor" ->
         let socks_port = Option.value ~default:9050 tunnel.socks_port in
@@ -139,11 +153,6 @@ let run_engine config_path =
           { Voidnet.Balancer.ip; port }
         ) pool_tunnels
       in
-
-      List.iteri (fun i tgt ->
-        traceln "[Engine][Balancer Target %d] IP=%s Port=%d"
-          i tgt.Voidnet.Balancer.ip tgt.Voidnet.Balancer.port
-      ) targets;
 
       let balancer = Voidnet.Balancer.create targets in
       let bind_parts = String.split_on_char ':' listener.bind in
@@ -206,11 +215,11 @@ let run_engine config_path =
     traceln "[Engine] Press Ctrl+C to terminate.";
 
     Promise.await stop_promise;
-    traceln "[Engine] Cancelling all running fibers and releasing jail resources...";
     Switch.fail sw Exit
   with
   | Exit ->
-    traceln "[Engine] Teardown complete. All jail resources and processes cleaned."
+    force_cleanup_all cfg.Voidnet.Config.tunnels;
+    traceln "[Engine] Teardown complete. All network interfaces, jails, and processes cleaned."
 
 let () =
   let raw_args = Array.to_list Sys.argv |> List.tl in
