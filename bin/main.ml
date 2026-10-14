@@ -109,11 +109,8 @@ let run_engine config_path =
       in
       match tunnel.tunnel_type with
       | "wireguard" ->
-        (match tunnel.config with
-         | Some conf_file ->
-           Voidnet.Jail.setup_wireguard ~netns ~lib_dir ~config_file:conf_file
-         | None ->
-           traceln "[Engine][WARN] WireGuard tunnel '%s' missing config" tunnel.id)
+        (* WireGuard は Netns.setup 内でインターフェース・ルート設定完了済み *)
+        ()
       | "tor" ->
         let socks_port = Option.value ~default:9050 tunnel.socks_port in
         Voidnet.Jail.spawn_tor ~sw ~proc_mgr ~netns ~lib_dir ~socks_port ()

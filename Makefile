@@ -64,6 +64,6 @@ help:
 	@echo "利用可能なコマンド:"
 	@echo "  make build         - バイナリをビルド"
 	@echo "  make prepare       - void ldd を実行して jail_libs を生成"
-	@echo "  make run [CONFIG=] - voidnet を実行 (例: make run CONFIG=../voidnet/multi_config.yaml)"
+	@echo "  make run [CONFIG=] - voidnet を実行 (例: make run CONFIG=~/.config/voidnet/config.yaml)"
 	@echo "  make clean-netns   - 異常終了時に残った ns-* を削除"
 	@echo "  make clean         - ビルド成果物と jail_libs、netns を全削除"

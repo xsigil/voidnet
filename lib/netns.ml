@@ -7,14 +7,15 @@ let run_cmd cmd =
     traceln "[Netns][WARN] Command exited with code %d: %s" ret cmd_str
 
 let run_cmd_strict cmd =
-  let cmd_str = String.concat " " cmd in
+  (* すべての引数を Filename.quote して # や空白によるシェル誤パースを完全防止 *)
+  let cmd_str = String.concat " " (List.map Filename.quote cmd) in
   let ret = Sys.command cmd_str in
   if ret <> 0 then
     failwith (Printf.sprintf "Command failed (%d): %s" ret cmd_str)
 
 let setup_resolv_conf ~netns ~dns_opt =
   let dir = Printf.sprintf "/etc/netns/%s" netns in
-  run_cmd [ "mkdir"; "-p"; dir ];
+  run_cmd [ "mkdir"; "-p"; Filename.quote dir ];
   let conf_path = Filename.concat dir "resolv.conf" in
   let dns_server = Option.value dns_opt ~default:"10.2.0.1" in
   (* timeout を 2 秒、attempts を 2 回に設定して DNS 待ちを短縮 *)
@@ -22,12 +23,14 @@ let setup_resolv_conf ~netns ~dns_opt =
   Out_channel.with_open_text conf_path (fun oc ->
     Out_channel.output_string oc content);
   traceln "[Netns] Configured DNS for %s -> %s" netns dns_server
-    
+
 let teardown ~netns ~veth_host =
-  run_cmd [ "ip"; "link"; "del"; veth_host; "2>/dev/null"; "||"; "true" ];
-  run_cmd [ "ip"; "netns"; "del"; netns; "2>/dev/null"; "||"; "true" ];
+  let q_veth = Filename.quote veth_host in
+  let q_netns = Filename.quote netns in
+  run_cmd [ Printf.sprintf "ip link del %s 2>/dev/null || true" q_veth ];
+  run_cmd [ Printf.sprintf "ip netns del %s 2>/dev/null || true" q_netns ];
   let dir = Printf.sprintf "/etc/netns/%s" netns in
-  run_cmd [ "rm"; "-rf"; dir ]
+  run_cmd [ "rm"; "-rf"; Filename.quote dir ]
 
 let parse_subnet subnet_str =
   match String.split_on_char '/' subnet_str with
@@ -72,7 +75,7 @@ let setup (tunnel : Config.tunnel_spec) =
   run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "link"; "set"; veth_ns; "up" ];
 
   (* 5. トンネル種別に応じたインターフェースとルーティング設定 *)
-   (match tunnel.tunnel_type with
+  (match tunnel.tunnel_type with
   | "wireguard" ->
      let wg_dev = "wg0" in
      run_cmd_strict [ "ip"; "link"; "add"; "dev"; wg_dev; "type"; "wireguard" ];
@@ -81,6 +84,7 @@ let setup (tunnel : Config.tunnel_spec) =
      (match tunnel.config with
       | Some conf_path ->
         let client_ip = Option.value tunnel.client_ip ~default:"10.2.0.2/32" in
+        (* conf_path の # も run_cmd_strict のクォートにより保護される *)
         run_cmd_strict [ "ip"; "netns"; "exec"; netns; "wg"; "setconf"; wg_dev; conf_path ];
         run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "addr"; "add"; client_ip; "dev"; wg_dev ];
         run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "link"; "set"; wg_dev; "mtu"; "1420" ];
@@ -92,7 +96,7 @@ let setup (tunnel : Config.tunnel_spec) =
   | "openvpn" ->
      (* /dev/net/tun の作成 *)
      run_cmd_strict [ "ip"; "netns"; "exec"; netns; "mkdir"; "-p"; "/dev/net" ];
-     run_cmd [ "ip"; "netns"; "exec"; netns; "mknod"; "-m"; "666"; "/dev/net/tun"; "c"; "10"; "200"; "2>/dev/null"; "||"; "true" ];
+     run_cmd [ Printf.sprintf "ip netns exec %s mknod -m 666 /dev/net/tun c 10 200 2>/dev/null || true" (Filename.quote netns) ];
 
      (* netns 内のフォワーディング有効化 *)
      run_cmd_strict [ "ip"; "netns"; "exec"; netns; "sysctl"; "-w"; "net.ipv4.ip_forward=1" ];
@@ -107,7 +111,7 @@ let setup (tunnel : Config.tunnel_spec) =
             oifname \"tun*\" masquerade\n\
           }\n\
         }\n\
-        EOF" netns
+        EOF" (Filename.quote netns)
      in
      run_cmd [ nft_cmd ];
 

@@ -22,11 +22,11 @@ let prepare_binary ~lib_dir bin_name =
   | None -> failwith (Printf.sprintf "Binary '%s' not found in PATH" bin_name)
   | Some bin_path ->
     traceln "[Prepare] Extracting dependencies for %s (%s) into %s..." bin_name bin_path lib_dir;
-    let cmd = Printf.sprintf "void jail --lib %s --extract %s"
-      (Filename.quote lib_dir) (Filename.quote bin_path) in
+    let cmd = Printf.sprintf "void ldd %s %s"
+      (Filename.quote bin_path) (Filename.quote lib_dir) in
     let ret = Sys.command cmd in
     if ret <> 0 then
-      failwith (Printf.sprintf "Failed to extract libraries for '%s' (code %d)" bin_name ret)
+      failwith (Printf.sprintf "Failed to extract libraries via 'void ldd' for '%s' (code %d)" bin_name ret)
     else
       traceln "[Prepare] Extracted dependencies for %s successfully." bin_name
 
@@ -34,13 +34,19 @@ let build_jail_cmd_args ~netns ~lib_dir ~binds ~exec_path args =
   let bind_args =
     match binds with
     | [] -> []
-    | bs -> [ Printf.sprintf "--bind=%s" (String.concat "," bs) ]
+    | bs -> [ "-bind"; String.concat "," bs ]
+  in
+  let exec_and_args =
+    match args with
+    | [] -> [ exec_path ]
+    | _ -> [ exec_path; "--" ] @ args
   in
   [ "ip"; "netns"; "exec"; netns;
     "void"; "jail";
-    "--lib"; lib_dir ]
+    "-size"; "64M";
+    "-lib"; lib_dir ]
   @ bind_args
-  @ [ exec_path ] @ args
+  @ exec_and_args
 
 let setup_wireguard ~netns ~lib_dir ~config_file =
   match find_binary "wg" with
@@ -52,13 +58,11 @@ let setup_wireguard ~netns ~lib_dir ~config_file =
       else
         config_file
     in
-    let cmd = Printf.sprintf
-      "ip netns exec %s void jail --lib %s --bind=%s:/etc/wireguard/wg.conf:ro %s setconf veth0 /etc/wireguard/wg.conf"
-      (Filename.quote netns)
-      (Filename.quote lib_dir)
-      (Filename.quote abs_conf)
-      (Filename.quote wg_bin)
+    let bind_mapping = Printf.sprintf "%s:/etc/wireguard/wg.conf:ro" abs_conf in
+    let args = build_jail_cmd_args ~netns ~lib_dir ~binds:[bind_mapping] ~exec_path:wg_bin
+      [ "setconf"; "wg0"; "/etc/wireguard/wg.conf" ]
     in
+    let cmd = String.concat " " (List.map Filename.quote args) in
     traceln "[Jail][WG] Applying config via void jail: %s" cmd;
     let ret = Sys.command cmd in
     if ret <> 0 then
@@ -74,7 +78,7 @@ let spawn_tor ~sw ~proc_mgr ~netns ~lib_dir ~socks_port () =
        Unix.chmod temp_base 0o777
      with _ -> ());
 
-    (* Switch 終了時に確実に痕跡を消滅させる *)
+    (* Switch 解放時にディレクトリとプロセス痕跡を完全消滅 *)
     Switch.on_release sw (fun () ->
       traceln "[Jail][Tor] Cleaning up ephemeral resources for %s..." netns;
       rm_rf temp_base;
