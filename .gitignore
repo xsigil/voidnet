@@ -9,3 +9,4 @@ auth*.txt
 pass*.txt
 multi_config.yaml
 config.yaml
+demo_output

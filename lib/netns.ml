@@ -94,7 +94,8 @@ let setup ~sw (tunnel : Config.tunnel_spec) =
         let client_ip = Option.value tunnel.client_ip ~default:"10.2.0.2/32" in
         run_cmd_strict [ "ip"; "netns"; "exec"; netns; "wg"; "setconf"; wg_dev; conf_path ];
         run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "addr"; "add"; client_ip; "dev"; wg_dev ];
-        run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "link"; "set"; wg_dev; "mtu"; "1420" ];
+        (* run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "link"; "set"; wg_dev; "mtu"; "1420" ]; *)
+        (* run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "link"; "set"; wg_dev; "mtu"; "1280" ]; *)
         run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "link"; "set"; wg_dev; "up" ];
         run_cmd_strict [ "ip"; "netns"; "exec"; netns; "ip"; "route"; "add"; "default"; "dev"; wg_dev ]
       | None ->
