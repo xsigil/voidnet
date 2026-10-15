@@ -162,6 +162,17 @@ make clean-netns
 make clean
 
 ```
+---
+
+### Disclaimer
+
+This software, architecture, and associated documentation are provided strictly for **educational, research, and defensive security purposes**. 
+
+* **Authorized Use Only:** The techniques described herein (including network namespace manipulation, routing control, and multi-protocol traffic orchestration) are intended for authorized testing, privacy research, and secure infrastructure design.
+* **No Unlawful Activity:** The author strictly prohibits the use of this project for any illegal activities, malicious operations, unauthorized surveillance evasion, or actions violating the terms of service of any third-party network, ISP, or service provider.
+* **No Warranty & Limitation of Liability:** This software is provided "AS IS", without warranty of any kind, express or implied. In no event shall the author or copyright holders be liable for any claim, damages, network misconfigurations, administrative sanctions, or other liability arising from the use or misuse of this software.
+
+Users are solely responsible for ensuring compliance with all applicable local, national, and international laws, regulations, and institutional policies before deploying or running this architecture.
 
 ---
 
